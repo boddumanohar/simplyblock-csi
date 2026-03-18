@@ -559,18 +559,10 @@ func prepareCreateVolumeReq(ctx context.Context, req *csi.CreateVolumeRequest, c
 		if qosErr != nil {
 			return nil, qosErr
 		}
-		if qosRWIOPS != "" {
-			maxRWIOPS = qosRWIOPS
-		}
-		if qosRWmBytes != "" {
-			maxRWmBytes = qosRWmBytes
-		}
-		if qosRmBytes != "" {
-			maxRmBytes = qosRmBytes
-		}
-		if qosWmBytes != "" {
-			maxWmBytes = qosWmBytes
-		}
+		maxRWIOPS, maxRWmBytes, maxRmBytes, maxWmBytes = mergeQoSParams(
+			maxRWIOPS, maxRWmBytes, maxRmBytes, maxWmBytes,
+			qosRWIOPS, qosRWmBytes, qosRmBytes, qosWmBytes,
+		)
 	}
 
 	createVolReq := util.CreateLVolData{
@@ -1138,6 +1130,27 @@ func getNvmfModelIDAnnotation(ctx context.Context, pvcName, pvcNamespace string)
 	}
 
 	return modelID, nil
+}
+
+// mergeQoSParams applies per-PVC annotation overrides on top of StorageClass
+// QoS defaults. An empty annotation string means "no override" — the
+// StorageClass value is kept. This is a pure function and is exported for
+// testing.
+func mergeQoSParams(scRWIOPS, scRWmBytes, scRmBytes, scWmBytes, annRWIOPS, annRWmBytes, annRmBytes, annWmBytes string) (string, string, string, string) {
+	rwIOPS, rwMBytes, rMBytes, wMBytes := scRWIOPS, scRWmBytes, scRmBytes, scWmBytes
+	if annRWIOPS != "" {
+		rwIOPS = annRWIOPS
+	}
+	if annRWmBytes != "" {
+		rwMBytes = annRWmBytes
+	}
+	if annRmBytes != "" {
+		rMBytes = annRmBytes
+	}
+	if annWmBytes != "" {
+		wMBytes = annWmBytes
+	}
+	return rwIOPS, rwMBytes, rMBytes, wMBytes
 }
 
 // getQoSAnnotations returns per-PVC QoS overrides from PVC annotations.
