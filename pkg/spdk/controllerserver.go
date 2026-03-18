@@ -645,6 +645,15 @@ func (cs *controllerServer) createVolume(ctx context.Context, req *csi.CreateVol
 		return nil, err
 	}
 
+	// Stamp the effective QoS values into VolumeContext so the PV spec records
+	// what was actually applied. PVC annotations are mutable and may be changed
+	// or deleted after provisioning; the PV spec is immutable and is the durable
+	// source of truth. This overwrites any StorageClass value that may differ.
+	vol.VolumeContext["qos_rw_iops"] = createVolReq.MaxRWIOPS
+	vol.VolumeContext["qos_rw_mbytes"] = createVolReq.MaxRWmBytes
+	vol.VolumeContext["qos_r_mbytes"] = createVolReq.MaxRmBytes
+	vol.VolumeContext["qos_w_mbytes"] = createVolReq.MaxWmBytes
+
 	volumeID, err := sbclient.CreateVolume(createVolReq)
 	if err != nil {
 		klog.Errorf("error creating simplyBlock volume: %v", err)
