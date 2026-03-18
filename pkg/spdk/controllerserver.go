@@ -47,6 +47,10 @@ const (
 	annotationLvolID          = "simplybk/lvol-id"
 	annotationSecretName      = "simplybk/secret-name"
 	annotationSecretNamespace = "simplybk/secret-namespace"
+	annotationQoSRWIOPS       = "simplybk/qos-rw-iops"
+	annotationQoSRWmBytes     = "simplybk/qos-rw-mbytes"
+	annotationQoSRmBytes      = "simplybk/qos-r-mbytes"
+	annotationQoSWmBytes      = "simplybk/qos-w-mbytes"
 	paramClusterID            = "cluster_id"
 	paramZoneClusterMap       = "zone_cluster_map"
 	paramRegionClusterMap     = "region_cluster_map"
@@ -545,15 +549,39 @@ func prepareCreateVolumeReq(ctx context.Context, req *csi.CreateVolumeRequest, c
 		return nil, err
 	}
 
+	// QoS from StorageClass, overridable per-PVC via annotations.
+	maxRWIOPS := params["qos_rw_iops"]
+	maxRWmBytes := params["qos_rw_mbytes"]
+	maxRmBytes := params["qos_r_mbytes"]
+	maxWmBytes := params["qos_w_mbytes"]
+	if pvcNameSelected && pvcNamespaceSelected {
+		qosRWIOPS, qosRWmBytes, qosRmBytes, qosWmBytes, qosErr := getQoSAnnotations(ctx, pvcName, pvcNamespace)
+		if qosErr != nil {
+			return nil, qosErr
+		}
+		if qosRWIOPS != "" {
+			maxRWIOPS = qosRWIOPS
+		}
+		if qosRWmBytes != "" {
+			maxRWmBytes = qosRWmBytes
+		}
+		if qosRmBytes != "" {
+			maxRmBytes = qosRmBytes
+		}
+		if qosWmBytes != "" {
+			maxWmBytes = qosWmBytes
+		}
+	}
+
 	createVolReq := util.CreateLVolData{
 		LvolName:     req.GetName(),
 		Size:         strconv.FormatInt(capacityBytes, 10),
 		LvsName:      params["pool_name"],
 		Fabric:       params["fabric"],
-		MaxRWIOPS:    params["qos_rw_iops"],
-		MaxRWmBytes:  params["qos_rw_mbytes"],
-		MaxRmBytes:   params["qos_r_mbytes"],
-		MaxWmBytes:   params["qos_w_mbytes"],
+		MaxRWIOPS:    maxRWIOPS,
+		MaxRWmBytes:  maxRWmBytes,
+		MaxRmBytes:   maxRmBytes,
+		MaxWmBytes:   maxWmBytes,
 		MaxSize:      params["max_size"],
 		MaxNamespace: maxNamespace,
 		PriorClass:   priorClass,
@@ -1101,4 +1129,31 @@ func getNvmfModelIDAnnotation(ctx context.Context, pvcName, pvcNamespace string)
 	}
 
 	return modelID, nil
+}
+
+// getQoSAnnotations returns per-PVC QoS overrides from PVC annotations.
+// Each returned value is empty string if the annotation is not set, meaning
+// the StorageClass parameter should be used as-is.
+func getQoSAnnotations(ctx context.Context, pvcName, pvcNamespace string) (rwIOPS, rwMBytes, rMBytes, wMBytes string, err error) {
+	config, err := rest.InClusterConfig()
+	if err != nil {
+		klog.Errorf("failed to get in-cluster config: %v", err)
+		return "", "", "", "", fmt.Errorf("could not get in-cluster config: %w", err)
+	}
+
+	clientset, err := kubernetes.NewForConfig(config)
+	if err != nil {
+		klog.Errorf("failed to create clientset: %v", err)
+		return "", "", "", "", fmt.Errorf("could not create clientset: %w", err)
+	}
+
+	pvc, err := clientset.CoreV1().PersistentVolumeClaims(pvcNamespace).Get(ctx, pvcName, metav1.GetOptions{})
+	if err != nil {
+		klog.Errorf("failed to get PVC %s in namespace %s: %v", pvcName, pvcNamespace, err)
+		return "", "", "", "", fmt.Errorf("could not get PVC %s in namespace %s: %w", pvcName, pvcNamespace, err)
+	}
+
+	annotations := pvc.ObjectMeta.Annotations
+	return annotations[annotationQoSRWIOPS], annotations[annotationQoSRWmBytes],
+		annotations[annotationQoSRmBytes], annotations[annotationQoSWmBytes], nil
 }

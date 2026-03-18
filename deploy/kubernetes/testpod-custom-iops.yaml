@@ -1,0 +1,51 @@
+# SPDX-License-Identifier: Apache-2.0
+# Example: per-PVC QoS (IOPS / throughput) overrides via annotations.
+#
+# By adding simplybk/qos-* annotations to a PVC you can set volume-specific
+# QoS limits without creating a dedicated StorageClass.  Any annotation that
+# is absent falls back to the value configured in the StorageClass.
+#
+# Supported annotations:
+#   simplybk/qos-rw-iops    – combined read+write IOPS limit  (0 = unlimited)
+#   simplybk/qos-rw-mbytes  – combined read+write MB/s limit  (0 = unlimited)
+#   simplybk/qos-r-mbytes   – read-only MB/s limit            (0 = unlimited)
+#   simplybk/qos-w-mbytes   – write-only MB/s limit           (0 = unlimited)
+---
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: spdkcsi-pvc-high-iops
+  annotations:
+    simplybk/secret-name: simplyblock-pvc-keys
+    simplybk/secret-namespace: default
+    # Override QoS for this specific volume only.
+    # The StorageClass may have qos_rw_iops: "0" (unlimited), but this PVC
+    # pins the volume to 5 000 IOPS and 500 MB/s read+write.
+    simplybk/qos-rw-iops: "5000"
+    simplybk/qos-rw-mbytes: "500"
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+  storageClassName: simplyblock-csi-sc   # one StorageClass, unique IOPS per PVC
+
+---
+kind: Pod
+apiVersion: v1
+metadata:
+  name: spdkcsi-test-high-iops
+spec:
+  containers:
+  - name: alpine
+    image: alpine:3
+    imagePullPolicy: "IfNotPresent"
+    command: ["sleep", "365d"]
+    volumeMounts:
+    - mountPath: "/spdkvol"
+      name: spdk-volume
+  volumes:
+  - name: spdk-volume
+    persistentVolumeClaim:
+      claimName: spdkcsi-pvc-high-iops
