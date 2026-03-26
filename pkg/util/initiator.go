@@ -205,7 +205,7 @@ func (cache *initiatorCache) Connect() (string, error) {
 	// get the hostname
 	hostname, err := os.Hostname()
 	if err != nil {
-		panic(err)
+		return "", fmt.Errorf("failed to get hostname: %w", err)
 	}
 	hostname = strings.Split(hostname, ".")[0]
 	klog.Info("hostname: ", hostname)
@@ -270,7 +270,7 @@ func (cache *initiatorCache) Disconnect() error {
 
 	hostname, err := os.Hostname()
 	if err != nil {
-		os.Exit(1)
+		return fmt.Errorf("failed to get hostname: %w", err)
 	}
 	hostname = strings.Split(hostname, ".")[0]
 	klog.Info("hostname: ", hostname)
@@ -766,7 +766,10 @@ func fetchNodeInfo(spdkNode *NodeNVMf, lvolID string) (*NodeInfo, error) {
 		return nil, fmt.Errorf("failed to fetch node info: %v", err)
 	}
 	var info []NodeInfo
-	respBytes, _ := json.Marshal(resp)
+	respBytes, err := json.Marshal(resp)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal node info response: %w", err)
+	}
 	if err := json.Unmarshal(respBytes, &info); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal node info: %v", err)
 	}
@@ -785,9 +788,17 @@ func isNodeOnline(spdkNode *NodeNVMf, nodeID string) bool {
 		return false
 	}
 	var status []NodeInfo
-	respBytes, _ := json.Marshal(resp)
+	respBytes, err := json.Marshal(resp)
+	if err != nil {
+		klog.Errorf("failed to marshal node status response for node %s: %v", nodeID, err)
+		return false
+	}
 	if err := json.Unmarshal(respBytes, &status); err != nil {
 		klog.Errorf("failed to unmarshal node status for node %s: %v", nodeID, err)
+		return false
+	}
+	if len(status) == 0 {
+		klog.Errorf("empty status response for node %s", nodeID)
 		return false
 	}
 	return status[0].Status == "online"
@@ -799,7 +810,10 @@ func fetchLvolConnection(spdkNode *NodeNVMf, lvolID string) ([]*LvolConnectResp,
 		return nil, fmt.Errorf("failed to fetch connection: %v", err)
 	}
 	var connections []*LvolConnectResp
-	respBytes, _ := json.Marshal(resp)
+	respBytes, err := json.Marshal(resp)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal connection response: %w", err)
+	}
 	if err := json.Unmarshal(respBytes, &connections); err != nil || len(connections) == 0 {
 		return nil, fmt.Errorf("invalid or empty connection response")
 	}

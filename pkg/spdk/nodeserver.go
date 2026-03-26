@@ -322,7 +322,9 @@ func (ns *nodeServer) NodeStageVolume(_ context.Context, req *csi.NodeStageVolum
 	}
 	defer func() {
 		if err != nil {
-			initiator.Disconnect() //nolint:errcheck // ignore error
+			if disconnErr := initiator.Disconnect(); disconnErr != nil {
+				klog.Warningf("failed to disconnect initiator after staging failure, volumeID: %s err: %v", volumeID, disconnErr)
+			}
 		}
 	}()
 	if err = ns.stageVolume(devicePath, stagingTargetPath, req, vc); err != nil { // idempotent

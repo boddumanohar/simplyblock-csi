@@ -295,7 +295,9 @@ func (cs *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVol
 	volumeInfo, err := cs.publishVolume(csiVolume.GetVolumeId(), sbClient)
 	if err != nil {
 		klog.Errorf("failed to publish volume, volumeID: %s err: %v", volumeID, err)
-		cs.deleteVolume(csiVolume.GetVolumeId()) //nolint:errcheck // we can do little
+		if cleanupErr := cs.deleteVolume(csiVolume.GetVolumeId()); cleanupErr != nil {
+			klog.Errorf("failed to delete volume during publish rollback, volumeID: %s err: %v", csiVolume.GetVolumeId(), cleanupErr)
+		}
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 
@@ -643,7 +645,7 @@ func getSPDKVol(csiVolumeID string) (*spdkVolume, error) {
 			lvolID:    ids[2],
 		}, nil
 	}
-	return nil, fmt.Errorf("missing clusterID or poolName in volume: %s", csiVolumeID)
+	return nil, status.Errorf(codes.InvalidArgument, "invalid volume ID format (expected clusterID:poolName:lvolID): %s", csiVolumeID)
 }
 
 func getSnapshot(csiSnapshotID string) (*spdkSnapshot, error) {
@@ -659,7 +661,7 @@ func getSnapshot(csiSnapshotID string) (*spdkSnapshot, error) {
 			snapshotID: ids[1],
 		}, nil
 	}
-	return nil, fmt.Errorf("missing clusterID in csiSnapshotID: %s", csiSnapshotID)
+	return nil, status.Errorf(codes.InvalidArgument, "invalid snapshot ID format (expected clusterID:snapshotID): %s", csiSnapshotID)
 }
 
 func (cs *controllerServer) publishVolume(volumeID string, sbclient *util.NodeNVMf) (map[string]string, error) {
